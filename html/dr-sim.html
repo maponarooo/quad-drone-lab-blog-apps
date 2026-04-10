@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>추측 항법 오차 시뮬레이터</title>
+<style>
+  body { margin: 0; padding: 10px; font-family: 'Pretendard', sans-serif; background: transparent; }
+  .container { background: #f9f9f9; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 600px; margin: 0 auto; box-sizing: border-box; }
+  h3 { text-align: center; margin-top: 0; margin-bottom: 20px; color: #333; }
+  .row { margin-bottom: 12px; }
+  label { display: block; margin-bottom: 5px; font-size: 14px; font-weight: bold; color: #333; }
+  input[type='range'] { width: 100%; cursor: pointer; }
+  .btn { display: block; width: 100%; padding: 12px; background: #007bff; color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; font-size: 16px; margin-top: 15px; }
+  .btn:hover { background: #0056b3; }
+  .canvas-wrap { position: relative; background: #e0f2fe; border: 2px solid #bce0fd; border-radius: 5px; overflow: hidden; margin-top: 20px; }
+  canvas { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+  .result { text-align: center; font-weight: bold; margin-top: 15px; min-height: 20px; font-size: 15px;}
+  .desc { font-size: 0.85em; color: #666; font-weight: normal; }
+  .highlight { color: #d9534f; }
+</style>
+</head>
+<body>
+  <div class="container">
+    <h3>추측 항법 오차 시뮬레이터</h3>
+    <div class="row">
+        <label>목표물 거리: <span id="distValTxt" class="highlight">200</span> km</label>
+        <input type="range" id="targetDist" min="50" max="1000" step="50" value="200">
+    </div>
+    <div class="row">
+        <label>풍속 (바람 세기): <span id="windVal">15</span> km/h</label>
+        <input type="range" id="windSpeed" min="0" max="50" value="15">
+    </div>
+    <div class="row">
+        <label>풍향 (바람 방향): <span id="windDirVal">90</span>° <span id="windDirText" class="desc"></span></label>
+        <input type="range" id="windDir" min="0" max="360" value="90">
+    </div>
+    <div class="row">
+        <label>누적 오차 (Drift): <span id="driftVal">1</span>°</label>
+        <input type="range" id="driftAngle" min="0" max="5" step="0.1" value="1">
+    </div>
+    <div class="row">
+        <label style="font-weight: normal; cursor: pointer;">
+            <input type="checkbox" id="visualFix"> 중간 지형 참조 보정 (Visual Fix) 켜기
+        </label>
+    </div>
+    <button id="startBtn" class="btn">비행 시작</button>
+    <div class="canvas-wrap">
+        <canvas id="simCanvas" width="560" height="400"></canvas>
+    </div>
+    <p id="resultText" class="result"></p>
+  </div>
+
+  <script>
+    var canvas = document.getElementById('simCanvas');
+    var ctx = canvas.getContext('2d');
+    var startBtn = document.getElementById('startBtn');
+    var targetDistInput = document.getElementById('targetDist');
+    var windSpeedInput = document.getElementById('windSpeed');
+    var windDirInput = document.getElementById('windDir');
+    var driftAngleInput = document.getElementById('driftAngle');
+    var visualFixInput = document.getElementById('visualFix');
+    var distValTxt = document.getElementById('distValTxt');
+    var windValTxt = document.getElementById('windVal');
+    var windDirValTxt = document.getElementById('windDirVal');
+    var windDirText = document.getElementById('windDirText');
+    var driftValTxt = document.getElementById('driftVal');
+    var resultText = document.getElementById('resultText');
+
+    var animationId;
+    var isRunning = false;
+    var targetY = 50;
+    var startY = 350;
+    var startX = canvas.width / 2;
+    var targetX = canvas.width / 2;
+    var totalDistancePx = startY - targetY;
+    var droneX, droneY, currentDrift = 0;
+
+    function getWindText(deg) {
+        if (deg === 0 || deg === 360) return '(북풍: 위로 붊)';
+        if (deg > 0 && deg < 90) return '(북동풍)';
+        if (deg === 90) return '(동풍: 오른쪽으로 붊)';
+        if (deg > 90 && deg < 180) return '(남동풍: 역풍)';
+        if (deg === 180) return '(남풍: 정면 역풍)';
+        if (deg > 180 && deg < 270) return '(남서풍: 역풍)';
+        if (deg === 270) return '(서풍: 왼쪽으로 붊)';
+        return '(북서풍)';
+    }
+
+    targetDistInput.oninput = function() { distValTxt.innerText = this.value; resetSim(); };
+    windSpeedInput.oninput = function() { windValTxt.innerText = this.value; };
+    windDirInput.oninput = function() { var val = parseInt(this.value); windDirValTxt.innerText = val; windDirText.innerText = getWindText(val); };
+    driftAngleInput.oninput = function() { driftValTxt.innerText = this.value; };
+
+    function drawBase() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#333';
+        ctx.fillRect(targetX - 20, targetY - 10, 40, 20);
+        ctx.font = '12px sans-serif';
+        ctx.fillText('목표물(항공모함)', targetX - 42, targetY - 15);
+        
+        ctx.fillStyle = '#28a745';
+        ctx.beginPath();
+        ctx.arc(startX, startY, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillText('출발지', startX - 15, startY + 20);
+        
+        ctx.setLineDash([5, 5]);
+        ctx.strokeStyle = '#aaa';
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(targetX, targetY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        var windSpeed = parseFloat(windSpeedInput.value);
+        if (windSpeed > 0) {
+            var windDirRad = parseFloat(windDirInput.value) * (Math.PI / 180);
+            var arrowX = canvas.width - 50;
+            var arrowY = 50;
+            var len = 20;
+            var endX = arrowX + Math.sin(windDirRad) * len;
+            var endY = arrowY - Math.cos(windDirRad) * len;
+            ctx.strokeStyle = '#007bff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(arrowX, arrowY);
+            ctx.lineTo(endX, endY);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(endX, endY, 3, 0, Math.PI * 2);
+            ctx.fillStyle = '#007bff';
+            ctx.fill();
+            ctx.fillText('바람', arrowX - 10, arrowY + 20);
+        }
+    }
+
+    function drawDist(dist) {
+        ctx.fillStyle = '#333';
+        ctx.font = 'bold 15px sans-serif';
+        ctx.fillText('목표까지 남은 거리: ' + dist.toFixed(1) + ' km', 15, 25);
+    }
+
+    function resetSim() {
+        if (animationId) cancelAnimationFrame(animationId);
+        droneX = startX;
+        droneY = startY;
+        currentDrift = 0;
+        resultText.innerText = '';
+        var currentTargetDist = parseFloat(targetDistInput.value);
+        drawBase();
+        drawDist(currentTargetDist);
+    }
+
+    function loop() {
+        if (!isRunning) return;
+        
+        var currentTargetDist = parseFloat(targetDistInput.value);
+        var scaleKmPerPx = currentTargetDist / totalDistancePx;
+        var distanceRatio = currentTargetDist / 200.0;
+        
+        var windSpeed = (parseFloat(windSpeedInput.value) * 0.05) * distanceRatio; 
+        var windDirRad = parseFloat(windDirInput.value) * (Math.PI / 180);
+        var baseDrift = (parseFloat(driftAngleInput.value) * 0.001) * distanceRatio;
+        var useFix = visualFixInput.checked;
+        var speedY = 2; 
+
+        currentDrift += baseDrift;
+        var moveX = speedY * Math.sin(currentDrift);
+        var moveY = -speedY * Math.cos(currentDrift); 
+        var wx = windSpeed * Math.sin(windDirRad);
+        var wy = -windSpeed * Math.cos(windDirRad);
+
+        droneX += (moveX + wx);
+        droneY += (moveY + wy);
+
+        if (useFix && droneY < (startY + targetY) / 2 && droneY > (startY + targetY) / 2 - speedY * 2) {
+            currentDrift = 0; 
+            droneX += (targetX - droneX) * 0.5; 
+            ctx.fillStyle = 'rgba(255, 193, 7, 0.5)';
+            ctx.beginPath();
+            ctx.arc(droneX, droneY, 30, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#000';
+            ctx.fillText('시각적 보정!', droneX + 15, droneY);
+        }
+
+        drawBase();
+        
+        var dx = targetX - droneX;
+        var dy = targetY - droneY;
+        var distPx = Math.sqrt(dx*dx + dy*dy);
+        var distKm = distPx * scaleKmPerPx;
+        drawDist(distKm);
+
+        ctx.fillStyle = '#dc3545';
+        ctx.beginPath();
+        ctx.arc(droneX, droneY, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (droneY <= targetY || droneX < 0 || droneX > canvas.width || droneY > canvas.height) {
+            isRunning = false;
+            var missPx = Math.abs(targetX - droneX);
+            var missKm = missPx * scaleKmPerPx;
+            
+            if (droneY <= targetY && missPx < 25) {
+                resultText.style.color = '#28a745';
+                resultText.innerText = '명중! 목표물을 정확히 타격했습니다. (최종 오차: ' + missKm.toFixed(1) + 'km 이내)';
+            } else {
+                resultText.style.color = '#dc3545';
+                resultText.innerText = droneY > targetY ? '실패! 역풍/바람에 밀려 경로를 완전히 이탈했습니다.' : '실패! 목표물에서 약 ' + missKm.toFixed(1) + 'km 벗어났습니다.';
+            }
+            return;
+        }
+        animationId = requestAnimationFrame(loop);
+    }
+
+    startBtn.onclick = function() {
+        resetSim();
+        isRunning = true;
+        loop();
+    };
+
+    windDirText.innerText = getWindText(parseInt(windDirInput.value));
+    resetSim();
+  </script>
+</body>
+</html>
