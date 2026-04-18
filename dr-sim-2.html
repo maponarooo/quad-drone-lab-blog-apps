@@ -211,3 +211,152 @@
         let v = Math.random();
         let z = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
         return z * stdev + mean;
+    }
+
+    // 1차원 INS 오차 시뮬레이션
+    function simulate_ins_1d(duration_sec, dt, accel_bias_mg, velocity_random_walk) {
+        const g = 9.80665;
+        const n_steps = Math.floor(duration_sec / dt);
+        
+        const bias_m_s2 = (accel_bias_mg / 1000.0) * g;
+        const noise_std_dev = (velocity_random_walk / 60.0) * (1 / Math.sqrt(dt));
+        
+        let pos = [];
+        let current_vel = 0;
+        let current_pos = 0;
+
+        for (let i = 1; i <= n_steps; i++) {
+            let noise = gaussianRandom(0, noise_std_dev);
+            let measured_accel = bias_m_s2 + noise; // 실제 가속도는 0이라고 가정
+            
+            current_vel += measured_accel * dt;
+            current_pos += current_vel * dt;
+            
+            // 렌더링 최적화를 위해 1초에 한 번만 데이터 저장
+            if (i % Math.floor(1 / dt) === 0) {
+                pos.push(current_pos);
+            }
+        }
+        return pos;
+    }
+
+    // 차트 업데이트 함수
+    function runSimulation() {
+        const duration_min = document.getElementById("timeSlider").value;
+        const duration_sec = duration_min * 60;
+        const dt = 0.01; // 100Hz 샘플링
+
+        // 시간축 배열 생성 (0초부터 duration_sec까지 1초 간격)
+        let time_labels = [];
+        for(let i=0; i<=duration_sec; i++) {
+            time_labels.push(i);
+        }
+
+        // DOM에서 입력된 파라미터 값 가져오기
+        const bias_consumer = parseFloat(document.getElementById("bias_consumer").value);
+        const vrw_consumer = parseFloat(document.getElementById("vrw_consumer").value);
+        
+        const bias_tactical = parseFloat(document.getElementById("bias_tactical").value);
+        const vrw_tactical = parseFloat(document.getElementById("vrw_tactical").value);
+        
+        const bias_nav = parseFloat(document.getElementById("bias_nav").value);
+        const vrw_nav = parseFloat(document.getElementById("vrw_nav").value);
+
+        // 시뮬레이션 실행
+        const pos_consumer = simulate_ins_1d(duration_sec, dt, bias_consumer, vrw_consumer);
+        const pos_tactical = simulate_ins_1d(duration_sec, dt, bias_tactical, vrw_tactical);
+        const pos_nav = simulate_ins_1d(duration_sec, dt, bias_nav, vrw_nav);
+
+        // 기존 차트 파괴 후 재생성
+        if (driftChart) {
+            driftChart.destroy();
+        }
+
+        const ctx = document.getElementById('driftChart').getContext('2d');
+        driftChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: time_labels,
+                datasets: [
+                    {
+                        label: 'Low-cost Consumer IMU Error',
+                        data: pos_consumer,
+                        borderColor: '#e74c3c',
+                        backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        fill: true
+                    },
+                    {
+                        label: 'Tactical MEMS INS Error',
+                        data: pos_tactical,
+                        borderColor: '#3498db',
+                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        fill: false
+                    },
+                    {
+                        label: 'Navigation Grade FOG Error',
+                        data: pos_nav,
+                        borderColor: '#2ecc71',
+                        backgroundColor: 'rgba(46, 204, 113, 0.1)',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        fill: false
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                plugins: {
+                    title: {
+                        display: true,
+                        text: '시간 경과에 따른 추측 항법 위치 오차 발산 (Drift)',
+                        font: { size: 16 }
+                    }
+                },
+                scales: {
+                    x: {
+                        title: { display: true, text: 'Time (Seconds)' }
+                    },
+                    y: {
+                        title: { display: true, text: 'Position Error (Meters)' }
+                    }
+                }
+            }
+        });
+    }
+
+    // 슬라이더 이벤트 리스너
+    document.getElementById("timeSlider").addEventListener("input", function(e) {
+        document.getElementById("timeValue").innerText = e.target.value;
+    });
+    
+    // 파라미터가 변경되거나 슬라이더에서 마우스를 뗄 때 차트 다시 그리기
+    document.getElementById("timeSlider").addEventListener("change", runSimulation);
+    
+    // 모든 input[type="number"] 요소에 변경 감지 이벤트 추가
+    const numberInputs = document.querySelectorAll('input[type="number"]');
+    numberInputs.forEach(input => {
+        input.addEventListener("change", runSimulation);
+    });
+
+    // 초기 실행
+    window.onload = runSimulation;
+</script>
+
+</body>
+</html>
+
+
+
+
+
+
+
