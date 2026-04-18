@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>QUAD Drone Lab - 추측 항법 오차 시뮬레이터</title>
-    <!-- Chart.js 라이브러리 로드 -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
@@ -41,7 +40,7 @@
             background: #ecf0f1;
             padding: 20px;
             border-radius: 8px;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
         }
         .slider-container {
             flex-grow: 1;
@@ -61,10 +60,65 @@
             cursor: pointer;
             transition: background 0.3s;
             font-weight: bold;
+            height: 100%;
         }
         button:hover {
             background-color: #2980b9;
         }
+        
+        /* 새로 추가된 파라미터 패널 스타일 */
+        .param-panel {
+            background: #ffffff;
+            border: 1px solid #dcdde1;
+            border-radius: 8px;
+            padding: 15px 20px;
+            margin-bottom: 20px;
+        }
+        .param-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 1px dashed #ecf0f1;
+        }
+        .param-row:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+        .param-title {
+            font-weight: bold;
+            font-size: 15px;
+            flex: 1;
+        }
+        .title-consumer { color: #e74c3c; }
+        .title-tactical { color: #2980b9; }
+        .title-nav { color: #27ae60; }
+        
+        .param-inputs {
+            display: flex;
+            gap: 20px;
+        }
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            font-size: 12px;
+            color: #7f8c8d;
+        }
+        .input-group label {
+            margin-bottom: 4px;
+            font-weight: bold;
+        }
+        .input-group input {
+            width: 90px;
+            padding: 6px;
+            border: 1px solid #bdc3c7;
+            border-radius: 4px;
+            font-family: inherit;
+            text-align: right;
+        }
+
         .chart-container {
             position: relative;
             height: 50vh;
@@ -90,9 +144,51 @@
     <div class="controls">
         <div class="slider-container">
             <label for="timeSlider"><strong>GPS 단절 비행 시간: </strong> <span id="timeValue">10</span> 분</label>
-            <input type="range" id="timeSlider" min="1" max="20" value="10" step="1">
+            <input type="range" id="timeSlider" min="1" max="30" value="10" step="1">
         </div>
-        <button onclick="runSimulation()">시뮬레이션 재실행 ↻</button>
+        <button onclick="runSimulation()">시뮬레이션 적용 ↻</button>
+    </div>
+
+    <div class="param-panel">
+        <div class="param-row">
+            <div class="param-title title-consumer">저가형 Consumer IMU</div>
+            <div class="param-inputs">
+                <div class="input-group">
+                    <label>Accel Bias (mg)</label>
+                    <input type="number" id="bias_consumer" value="2.0" step="0.1">
+                </div>
+                <div class="input-group">
+                    <label>VRW (m/s/√hr)</label>
+                    <input type="number" id="vrw_consumer" value="0.1" step="0.01">
+                </div>
+            </div>
+        </div>
+        <div class="param-row">
+            <div class="param-title title-tactical">전술급 Tactical MEMS</div>
+            <div class="param-inputs">
+                <div class="input-group">
+                    <label>Accel Bias (mg)</label>
+                    <input type="number" id="bias_tactical" value="0.05" step="0.01">
+                </div>
+                <div class="input-group">
+                    <label>VRW (m/s/√hr)</label>
+                    <input type="number" id="vrw_tactical" value="0.02" step="0.01">
+                </div>
+            </div>
+        </div>
+        <div class="param-row">
+            <div class="param-title title-nav">항법급 Navigation FOG</div>
+            <div class="param-inputs">
+                <div class="input-group">
+                    <label>Accel Bias (mg)</label>
+                    <input type="number" id="bias_nav" value="0.005" step="0.001">
+                </div>
+                <div class="input-group">
+                    <label>VRW (m/s/√hr)</label>
+                    <input type="number" id="vrw_nav" value="0.005" step="0.001">
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="chart-container">
@@ -102,9 +198,7 @@
     <div class="description">
         <strong>💡 그래프 해석 가이드:</strong><br>
         실제 기체가 GPS 없이 일정한 속도로 직진한다고 가정할 때, 내부 IMU(가속도계)의 <b>바이어스(Bias)</b>와 <b>백색 잡음(Random Walk)</b>이 이중 적분되어 위치 오차가 기하급수적으로 폭발하는 현상을 시뮬레이션합니다.<br>
-        - <span style="color:red; font-weight:bold;">저가형 Consumer IMU</span>: 스마트폰, 완구용 드론 수준. 단 몇 분 만에 오차가 수백 미터로 치솟습니다.<br>
-        - <span style="color:blue; font-weight:bold;">전술급 Tactical MEMS INS</span>: 자폭 드론 및 산업용 무인기에 적합한 센서. 오차 발산이 훨씬 완만합니다.<br>
-        - <span style="color:green; font-weight:bold;">항법급 Navigation FOG</span>: 잠수함이나 순항 미사일에 쓰이는 수천만 원대 초정밀 센서로 오차가 거의 0에 수렴합니다.
+        - 위 파라미터 창의 수치를 직접 변경하며 각 센서 스펙에 따른 <b>추측 항법(Dead Reckoning)</b> 한계를 확인해 보세요.
     </div>
 </div>
 
@@ -117,132 +211,3 @@
         let v = Math.random();
         let z = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
         return z * stdev + mean;
-    }
-
-    // 1차원 INS 오차 시뮬레이션 (Python 코드와 동일한 알고리즘)
-    function simulate_ins_1d(duration_sec, dt, accel_bias_mg, velocity_random_walk) {
-        const g = 9.80665;
-        const n_steps = Math.floor(duration_sec / dt);
-        
-        const bias_m_s2 = (accel_bias_mg / 1000.0) * g;
-        const noise_std_dev = (velocity_random_walk / 60.0) * (1 / Math.sqrt(dt));
-        
-        let pos = [];
-        let current_vel = 0;
-        let current_pos = 0;
-
-        for (let i = 1; i <= n_steps; i++) {
-            let noise = gaussianRandom(0, noise_std_dev);
-            let measured_accel = bias_m_s2 + noise; // 실제 가속도는 0이라고 가정
-            
-            current_vel += measured_accel * dt;
-            current_pos += current_vel * dt;
-            
-            // 렌더링 최적화를 위해 1초에 한 번만 데이터 저장
-            if (i % Math.floor(1 / dt) === 0) {
-                pos.push(current_pos);
-            }
-        }
-        return pos;
-    }
-
-    // 차트 업데이트 함수
-    function runSimulation() {
-        const duration_min = document.getElementById("timeSlider").value;
-        const duration_sec = duration_min * 60;
-        const dt = 0.01; // 100Hz 샘플링
-
-        // 시간축 배열 생성 (0초부터 duration_sec까지 1초 간격)
-        let time_labels = [];
-        for(let i=0; i<=duration_sec; i++) {
-            time_labels.push(i);
-        }
-
-        // 1. 저가형 Consumer IMU (Accel Bias: 2.0mg, VRW: 0.1)
-        const pos_consumer = simulate_ins_1d(duration_sec, dt, 2.0, 0.1);
-        // 2. 전술급 Tactical MEMS INS (Accel Bias: 0.05mg, VRW: 0.02)
-        const pos_tactical = simulate_ins_1d(duration_sec, dt, 0.05, 0.02);
-        // 3. 항법급 Navigation Grade FOG (Accel Bias: 0.005mg, VRW: 0.005)
-        const pos_nav = simulate_ins_1d(duration_sec, dt, 0.005, 0.005);
-
-        // 기존 차트 파괴 후 재생성
-        if (driftChart) {
-            driftChart.destroy();
-        }
-
-        const ctx = document.getElementById('driftChart').getContext('2d');
-        driftChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: time_labels,
-                datasets: [
-                    {
-                        label: 'Low-cost Consumer IMU Error',
-                        data: pos_consumer,
-                        borderColor: 'red',
-                        backgroundColor: 'rgba(255, 0, 0, 0.1)',
-                        borderWidth: 2,
-                        pointRadius: 0,
-                        fill: true
-                    },
-                    {
-                        label: 'Tactical MEMS INS Error',
-                        data: pos_tactical,
-                        borderColor: 'blue',
-                        backgroundColor: 'rgba(0, 0, 255, 0.1)',
-                        borderWidth: 2,
-                        pointRadius: 0,
-                        fill: false
-                    },
-                    {
-                        label: 'Navigation Grade FOG Error',
-                        data: pos_nav,
-                        borderColor: 'green',
-                        backgroundColor: 'rgba(0, 128, 0, 0.1)',
-                        borderWidth: 2,
-                        pointRadius: 0,
-                        fill: false
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: {
-                    mode: 'index',
-                    intersect: false,
-                },
-                plugins: {
-                    title: {
-                        display: true,
-                        text: '시간 경과에 따른 위치 오차 (Position Drift Over Time)',
-                        font: { size: 16 }
-                    }
-                },
-                scales: {
-                    x: {
-                        title: { display: true, text: 'Time (Seconds)' }
-                    },
-                    y: {
-                        title: { display: true, text: 'Position Error (Meters)' }
-                    }
-                }
-            }
-        });
-    }
-
-    // 슬라이더 이벤트 리스너
-    document.getElementById("timeSlider").addEventListener("input", function(e) {
-        document.getElementById("timeValue").innerText = e.target.value;
-    });
-    
-    document.getElementById("timeSlider").addEventListener("change", function() {
-        runSimulation();
-    });
-
-    // 초기 실행
-    window.onload = runSimulation;
-</script>
-
-</body>
-</html>
